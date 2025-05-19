@@ -21,16 +21,16 @@ class VisualPlugin(nn.Module):
     def forward(self, inputs, valid_groups, adj_matrix):
         batch_size, group_number, channels, height, width = inputs.shape
 
-        # 将输入 reshape 成 (batch_size * group_number, 3, 224, 224)
+        # Reshape inputs to (batch_size * group_number, channels, height, width)
         inputs = inputs.view(batch_size * group_number, channels, height, width)
 
-        # 使用 ViT 模型提取特征
+        # Extract features using the visual encoder (ViT)
         outputs = self.visual_encoder(pixel_values=inputs).last_hidden_state
 
-        # 取出 [CLS] token 的输出
+        # Extract the [CLS] token output
         cls_output = outputs[:, 0, :]  # (batch_size * group_number, hidden_dim)
 
-        # 将输出 reshape 回 (batch_size, group_number, hidden_dim)
+        # Reshape output back to (batch_size, group_number, hidden_dim)
         cls_output = cls_output.view(batch_size, group_number, -1)
 
         cls_output = self.dropout(cls_output)
@@ -38,15 +38,18 @@ class VisualPlugin(nn.Module):
         if self.gcn is not None:
             cls_output = self.gcn(cls_output, adj_matrix)
 
-        # 根据 valid_groups 对每个 batch 取平均
+        # Compute average per batch based on valid_groups
         batch_avg_outputs = []
         for i in range(batch_size):
-            valid_group_count = valid_groups[i]  # 当前 batch 的有效 group 数
-            valid_cls_output = cls_output[i, :valid_group_count, :]  # 只取有效的 group
-            avg_output = valid_cls_output.mean(dim=0)  # 对有效 group 取平均
+            # Number of valid groups in the current batch
+            valid_group_count = valid_groups[i]
+            # Select only the valid groups
+            valid_cls_output = cls_output[i, :valid_group_count, :]
+            # Compute mean over valid groups
+            avg_output = valid_cls_output.mean(dim=0)
             batch_avg_outputs.append(avg_output)
 
-        # 将所有 batch 的平均输出拼接在一起
+        # Stack average outputs of all batches together
         batch_avg_outputs = torch.stack(batch_avg_outputs).to(cls_output.device)
 
         return batch_avg_outputs
